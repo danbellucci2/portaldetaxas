@@ -46,6 +46,20 @@
     margin-bottom: 30px;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
   }
+  .latest-rate {
+    background: rgba(74, 144, 226, 0.1);
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin-bottom: 15px;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: 500;
+  }
+  .latest-rate span {
+    font-weight: bold;
+    color: var(--primary-color);
+  }
   .chart-container {
     display: flex;
     flex-direction: column;
@@ -184,8 +198,8 @@
     <h1>Portal de Taxas</h1>
     <div class="theme-toggle">
       <svg id="themeToggleIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-        <path class="sun" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-        <path class="moon" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        <path class="sun" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+        <path class="moon" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
       </svg>
     </div>
     <div class="date-inputs">
@@ -203,11 +217,12 @@
       <button id="botao1" data-tooltip="Carregar Dados">
         <i class="fas fa-sync-alt"></i>
       </button>
-      <button id="exportButton" data-tooltip="Exportar para Excel" disabled>
+      <button id="exportButton" data-tooltip="Exportar para Excel" disabled="">
         <i class="fas fa-file-excel"></i>
       </button>
     </div>
     <div class="chart-container">
+      <div id="latestRate" class="latest-rate" style="display: none;">Taxa CDI Diária atual: <span>13.15%</span></div>
       <div id="chartContainer">
         <canvas id="cdiChart"></canvas>
       </div>
@@ -296,6 +311,28 @@
       return ((accumulatedRate - 1) * 100).toFixed(4);
     }
 
+    function updateLatestRate(data) {
+      const latestRateElement = document.getElementById('latestRate');
+      if (!data || data.length === 0) {
+        latestRateElement.style.display = 'none';
+        return;
+      }
+      
+      const latest = data[data.length - 1];
+      const value = currentDataType === 'cdi' && currentCDIType === 'annual' ? 
+        parseFloat(calculateAnnualCDI(latest.valor)).toFixed(2) : 
+        parseFloat(latest.valor).toFixed(2);
+      
+      const label = {
+        'cdi': currentCDIType === 'annual' ? 'Taxa CDI Anual' : 'Taxa CDI Diária',
+        'ipca': 'IPCA',
+        'usd': 'Cotação do Dólar'
+      }[currentDataType];
+      
+      latestRateElement.innerHTML = `${label} atual: <span>${value}${currentDataType === 'usd' ? '' : '%'}</span>`;
+      latestRateElement.style.display = 'block';
+    }
+
     function createChart(data, startDate, endDate) {
       if (Array.isArray(data) && data.length > 0) {
         const filteredData = data.filter(item => {
@@ -303,12 +340,14 @@
           return itemDate.isSameOrAfter(startDate) && itemDate.isSameOrBefore(endDate);
         });
 
-        const accumulatedRate = calculateAccumulatedRate(filteredData);
-        
-        if (currentDataType === 'usd') {
-          document.getElementById('accumulatedRate').textContent = '';
-        } else {
+        updateLatestRate(filteredData);
+
+        // Only calculate and show accumulated rate for CDI and IPCA
+        if (currentDataType === 'cdi' || currentDataType === 'ipca') {
+          const accumulatedRate = calculateAccumulatedRate(filteredData);
           document.getElementById('accumulatedRate').textContent = `Taxa Acumulada no Período: ${accumulatedRate}%`;
+        } else {
+          document.getElementById('accumulatedRate').textContent = '';
         }
 
         currentChartData = filteredData.map(item => ({
@@ -368,9 +407,12 @@
                 }
               },
               legend: {
-                display: window.innerWidth > 768,
+                display: true,
+                position: 'top',
+                align: 'end',
                 labels: {
-                  color: 'var(--text-color)'
+                  color: 'var(--text-color)',
+                  boxWidth: 20
                 }
               },
               tooltip: {
@@ -432,10 +474,6 @@
             }
           }
         });
-
-        if (currentDataType !== 'usd') {
-          document.getElementById('accumulatedRate').textContent = `Taxa Acumulada no Período: ${accumulatedRate}%`;
-        }
       } else {
         console.error('Formato de dados inválido ou nenhum dado disponível para o período selecionado:', data);
       }
@@ -486,95 +524,69 @@
       const oneYearAgo = new Date(today);
       oneYearAgo.setFullYear(today.getFullYear() - 1);
 
+      const campo1 = document.getElementById('campo1');
+      const campo2 = document.getElementById('campo2');
+
       if (dataType === 'ipca') {
-        const yearMonth1 = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, '0')}`;
-        const yearMonth2 = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-        document.getElementById('campo1').value = yearMonth1;
-        document.getElementById('campo2').value = yearMonth2;
+        const year = oneYearAgo.getFullYear();
+        const month = String(oneYearAgo.getMonth() + 1).padStart(2, '0');
+        campo1.value = `${year}-${month}`;
+
+        const currentYear = today.getFullYear();
+        const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
+        campo2.value = `${currentYear}-${currentMonth}`;
       } else {
-        document.getElementById('campo1').value = oneYearAgo.toISOString().split('T')[0];
-        document.getElementById('campo2').value = today.toISOString().split('T')[0];
+        campo1.value = oneYearAgo.toISOString().split('T')[0];
+        campo2.value = today.toISOString().split('T')[0];
       }
-      
-      updateDateFormat();
+
+      await loadAndDisplayData();
     }
 
     function exportToExcel() {
-      try {
-        const wsData = currentChartData.map(item => {
-          if (currentDataType === 'cdi') {
-            return {
-              Data: item.data,
-              'CDI Diário (%)': item.valor.toFixed(4),
-              'CDI Anual (%)': item.valorAnual.toFixed(2)
-            };
-          } else if (currentDataType === 'usd') {
-            return {
-              Data: item.data,
-              'USD/BRL': item.valor.toFixed(4)
-            };
-          } else {
-            return {
-              Data: item.data,
-              'IPCA (%)': item.valor.toFixed(4)
-            };
-          }
-        });
-
-        const ws = XLSX.utils.json_to_sheet(wsData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, currentDataType.toUpperCase());
-        
-        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        
-        const url = URL.createObjectURL(blob);
-        
-        window.open(url, '_blank');
-        
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 100);
-      } catch (error) {
-        console.error('Erro ao exportar dados:', error);
-        alert('Erro ao exportar dados. Por favor, tente novamente mais tarde.');
-      }
+      if (!currentChartData) return;
+      
+      const ws = XLSX.utils.json_to_sheet(
+        currentChartData.map(item => ({
+          Data: item.data,
+          Valor: item.valor,
+          ...(currentDataType === 'cdi' && currentCDIType === 'annual' ? { 'Valor Anual': item.valorAnual } : {})
+        }))
+      );
+      
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Dados");
+      
+      const fileName = `${currentDataType.toUpperCase()}_${moment().format('YYYYMMDD')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
     }
+
+    document.getElementById('dataType').addEventListener('change', async (e) => {
+      currentDataType = e.target.value;
+      const cdiTypeSelect = document.getElementById('cdiType');
+      cdiTypeSelect.style.display = currentDataType === 'cdi' ? 'inline-block' : 'none';
+      updateDateFormat();
+      await loadAndDisplayData();
+    });
+
+    document.getElementById('cdiType').addEventListener('change', (e) => {
+      currentCDIType = e.target.value;
+      if (chart && currentChartData) {
+        createChart(currentChartData, moment(document.getElementById('campo1').value), moment(document.getElementById('campo2').value));
+      }
+    });
 
     document.getElementById('botao1').addEventListener('click', loadAndDisplayData);
     document.getElementById('exportButton').addEventListener('click', exportToExcel);
-    document.getElementById('dataType').addEventListener('change', function() {
-      currentDataType = this.value;
-      const cdiTypeSelect = document.getElementById('cdiType');
-      cdiTypeSelect.style.display = currentDataType === 'cdi' ? 'block' : 'none';
-      
-      if (currentCDIType === 'annual' && currentDataType === 'cdi') {
-        document.getElementById('cdiType').style.display = '';
-      }
-      
-      updateDateFormat();
 
-      if (chart) {
-        chart.destroy();
-        chart = null;
-      }
-      loadAndDisplayData();
-    });
-
-    document.getElementById('cdiType').addEventListener('change', function() {
-      currentCDIType = this.value;
-      if (chart) {
-        loadAndDisplayData();
-      }
-    });
-
-    document.getElementById('themeToggleIcon').addEventListener('click', function() {
+    document.getElementById('themeToggleIcon').addEventListener('click', () => {
       document.body.classList.toggle('dark-theme');
+      if (chart) {
+        chart.update();
+      }
     });
 
-    initializeDates().then(() => {
-      loadAndDisplayData();
-    });
+    initializeDates();
   </script>
-</body>
-</html>
+
+</body></html>
